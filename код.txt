@@ -1,0 +1,119 @@
+#include <windows.h>
+#include <commdlg.h> // Для GetOpenFileName
+
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+HBITMAP hBitmap = NULL; // Глобальная переменная для изображения
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = L"PictureApp";
+
+    RegisterClass(&wc);
+
+    HWND hwnd = CreateWindowEx(
+        0,
+        L"PictureApp",
+        L"PictureApp",
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        GetSystemMetrics(SM_CXSCREEN) / 2,
+        GetSystemMetrics(SM_CYSCREEN) / 2,
+        NULL, NULL, hInstance, NULL
+    );
+
+    if (hwnd == NULL) return 0;
+
+    ShowWindow(hwnd, nCmdShow);
+
+    MSG msg = {};
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    return 0;
+}
+
+void LoadImageFromFile(HWND hwnd) {
+    OPENFILENAME ofn = {};
+    WCHAR szFile[260] = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = sizeof(szFile);
+    ofn.lpstrFilter = L"BMP Files\0*.BMP\0";
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+    if (GetOpenFileName(&ofn)) {
+        if (hBitmap) DeleteObject(hBitmap);
+        hBitmap = (HBITMAP)LoadImage(NULL, szFile, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+        InvalidateRect(hwnd, NULL, TRUE); // Обновление окна
+    }
+}
+
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    static int windowWidth, windowHeight;
+
+    switch (uMsg) {
+    case WM_SIZE:
+        windowWidth = LOWORD(lParam);
+        windowHeight = HIWORD(lParam);
+        InvalidateRect(hwnd, NULL, TRUE); // Перерисовка
+        break;
+
+    case WM_COMMAND:
+        if (LOWORD(wParam) == 1) LoadImageFromFile(hwnd);
+        break;
+
+    case WM_CREATE: {
+        HMENU hMenu = CreateMenu();
+        AppendMenu(hMenu, MF_STRING, 1, L"Open BMP");
+        SetMenu(hwnd, hMenu);
+        break;
+    }
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+
+        // Заливка всего окна белым цветом
+        RECT rect;
+        GetClientRect(hwnd, &rect);
+        FillRect(hdc, &rect, (HBRUSH)GetStockObject(WHITE_BRUSH));
+
+        if (hBitmap) {
+            HDC hdcMem = CreateCompatibleDC(hdc);
+            SelectObject(hdcMem, hBitmap);
+
+            BITMAP bmp;
+            GetObject(hBitmap, sizeof(bmp), &bmp);
+
+            // Рассчитываем координаты для вывода изображения по центру
+            int x = (windowWidth - bmp.bmWidth) / 2;
+            int y = (windowHeight - bmp.bmWidth) / 2; // Рисуем картинку сверху окна
+
+            // Убедимся, что изображение помещается в границы окна
+            if (x < 0) x = 0;
+            if (y < 0) y = 0;
+
+            // Рисуем изображение
+            BitBlt(hdc, x, y, bmp.bmWidth, bmp.bmHeight, hdcMem, 0, 0, SRCCOPY);
+            DeleteDC(hdcMem);
+        }
+        EndPaint(hwnd, &ps);
+        break;
+    }
+
+    case WM_DESTROY:
+        if (hBitmap) DeleteObject(hBitmap);
+        PostQuitMessage(0);
+        break;
+
+    default:
+        return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    }
+    return 0;
+}
